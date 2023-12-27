@@ -182,6 +182,47 @@ impl Tensor {
         Ok(from_storage(storage, shape, none, is_variable))
     }
 
+
+
+    pub fn topk(&self, k: usize, dim: i64, largest: bool, sorted: bool) -> Result<(Self, Self)> {
+        if k == 0 {
+            let values = Tensor::zeros(self.shape(), self.dtype(), self.device())?;
+            let indices = Tensor::zeros(self.shape(), DType::I64, self.device())?;
+            return Ok((values, indices));
+        }
+    
+        let dim = self.normalize_axis(dim)? as usize;
+        let dim_size = self.dim(dim)?;
+        let mut queue: Vec<(f64, i64)> = Vec::with_capacity(dim_size);
+    
+        for i in 0..dim_size {
+            queue.push((self.get(i)?.to_scalar::<f64>()?, i as i64));
+        }
+    
+        if largest {
+            queue.sort_unstable_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        } else {
+            queue.sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        }
+    
+        queue.truncate(k);
+    
+        if sorted && !largest {
+            queue.sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        }
+    
+        let top_values: Vec<f64> = queue.iter().map(|&(val, _)| val).collect();
+        let top_indices: Vec<i64> = queue.iter().map(|&(_, idx)| idx).collect();
+    
+        let values_tensor = Tensor::from_vec(top_values, &[k], self.device())?;
+        let indices_tensor = Tensor::from_vec(top_indices, &[k], self.device())?;
+    
+        Ok((values_tensor, indices_tensor))
+    }
+
+
+
+
     /// Creates a new tensor filled with ones.
     ///
     /// ```rust
@@ -2723,3 +2764,26 @@ impl std::ops::Div<&Tensor> for f64 {
         rhs.recip()? * self
     }
 }
+
+
+
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     use crate::Device; // Make sure to import the necessary modules
+
+//     #[test]
+//     fn test_topk() {
+//         // Create a tensor with known values
+//         let tensor = Tensor::from_vec(vec![1.0, 3.0, 2.0, 5.0, 4.0], &[5], &Device::Cpu).unwrap();
+
+//         // Call the topk method
+//         let (values, indices) = tensor.topk(3, 0, true, true).unwrap();
+
+//         // Check the topk values
+//         assert_eq!(values.to_vec1::<f64>().unwrap(), vec![5.0, 4.0, 3.0]);
+
+//         // Check the topk indices
+//         assert_eq!(indices.to_vec1::<i64>().unwrap(), vec![3, 4, 1]);
+//     }
+// }
